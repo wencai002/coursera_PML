@@ -1,0 +1,105 @@
+---
+title: "PracticalMachineLearning_Week4"
+author: "WENCAI"
+date: "5 Mai 2019"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, options(tinytex.verbose = TRUE))
+```
+
+## 0. Introduction
+This project is part of the coursera course practical machine learning week 4 assignment. Background is the collected acceleromotors data from 6 participants. Target is to train a modell in order to predict the manner of their activities, which correspond to the "classes" variable in the data set.
+
+## 1. Data Cleasing
+Load the packages and download the data as indicated
+
+```{r}
+library(caret)
+library(rattle)
+library(dplyr)
+trainURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train_raw<-read.csv(trainURL,na.strings=c("NA","","#DIV/0!"))
+test_raw<-read.csv(testURL,na.strings=c("NA","","#DIV/0!"))
+str(train_raw)
+```
+
+compare the column name values between the two data sets
+```{r}
+colnames(train_raw)==colnames(test_raw)
+test_raw<-dplyr::select(test_raw,-problem_id)
+```
+As we can see the last column is different. And that column is problem id, which is a redundant of the entry id. So it is removed
+
+We can see there is a lot of NA values in a lot of columns.Also the first 5 columns are purely framework information (user and timestamp), which will not bring value as predictors and can be removed.Then we will do the nearZeroVa to remove the variables with less variance.
+
+```{r}
+remove_col<-colnames(train_raw)[1:5]
+train_raw<-dplyr::select(train_raw,-remove_col)
+test_raw<-dplyr::select(test_raw,-remove_col)
+## remove columns with NA values
+train_raw<-train_raw[,colSums(is.na(train_raw))==0]
+nzv_tr<-nearZeroVar(train_raw,saveMetrics=TRUE)
+train_raw<-train_raw[,nzv_tr$nzv==FALSE]
+print(dim(train_raw))
+```
+
+We finally get 54 variables. The last column of the train_raw would be classe. Except that paricular column, the rest of the columns should be remained in the test raw.
+```{r}
+remain_col<-colnames(train_raw)[1:53]
+test_raw<-dplyr::select(test_raw,remain_col)
+dim(test_raw)
+```
+
+## 2. Train the model
+
+Now we are finished with the variables. We can start to train the model based on the current data set. First we do the training and testing spitting due to the cross validation purpose.
+
+```{r}
+inTrain<-createDataPartition(y=train_raw$classe,p=0.6,list=FALSE)
+testset<-train_raw[-inTrain,]
+trainset<-train_raw[inTrain,]
+dim(trainset)
+```
+
+The first model we will try is decission Tree.
+```{r}
+mod_dt<-train(classe~.,data=trainset,method="rpart")
+print(table(predict(mod_dt,trainset),trainset$classe))
+print(table(predict(mod_dt,testset),testset$classe))
+rattle::fancyRpartPlot(mod_dt$finalModel)
+```
+
+Apparently the model and the result is not satisfying. Let's take a look at the accuracy.
+```{r}
+sum(predict(mod_dt,testset)==testset$classe)/dim(testset)[1]
+```
+
+The second model we use is random forest.
+```{r}
+mod_rf<-train(classe~.,data=trainset,method="rf",
+              trControl=trainControl(method="cv",number=6))
+print(table(predict(mod_rf,trainset),trainset$classe))
+print(table(predict(mod_rf,testset),testset$classe))
+```
+
+Apparently the result is much better. So we will decide to use this random forest model
+
+```{r}
+predict_rf<-predict(mod_rf,testset)
+print(sum(predict_rf==testset$classe)/dim(testset)[1])
+confusionMatrix(predict_rf, testset$classe)
+```
+
+
+
+3. Use the model to predict
+
+```{r}
+predict_result<-predict(mod_rf,test_raw)
+print(predict_result)
+```
